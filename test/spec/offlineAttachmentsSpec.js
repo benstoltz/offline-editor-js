@@ -58,7 +58,7 @@ describe("Attachments", function()
 			clearFeatureLayer( g_featureLayers[3], function(success,response)
 			{
 				expect(success).toBeTruthy();
-				var listener = g_featureLayers[3].on('update-end', function(){ listener.remove(); completedOne();})
+				var listener = g_featureLayers[3].on('update-end', function(){ listener.remove(); })
 				g_featureLayers[3].refresh();
 				done();
 			});
@@ -477,8 +477,8 @@ describe("Attachments", function()
 				expect(attachmentResults[1].addAttachmentResult).not.toBeUndefined();
 				expect(attachmentResults[1].addAttachmentResult.success).toBeTruthy();
 
-				expect(result.features.responses[g_featureLayers[3].url]).not.toBeUndefined();
-				var featureResults = result.features.responses[g_featureLayers[3].url];
+				expect(result.features.responses[0]).not.toBeUndefined();
+				var featureResults = result.features.responses[0];
 				expect(featureResults.addResults.length).toBe(1);
 				expect(featureResults.updateResults.length).toBe(0);
 				expect(featureResults.deleteResults.length).toBe(0);
@@ -498,22 +498,23 @@ describe("Attachments", function()
 			expect(g_offlineFeaturesManager.getOnlineStatus()).toBe(g_offlineFeaturesManager.RECONNECTING);
 		});
 			
-		async.it("no edits pending", function(done)
+		it("no edits pending", function(done)
 		{
-			expect(g_editsStore.pendingEditsCount()).toBe(0);
-			done();
+			expect(g_featureLayers[3].pendingEditsCount(function(count){
+				expect(count).toBe(0);
+			}));
 		});
 
-		async.it("no attachments pending", function(done)
+		it("no attachments pending", function(done)
 		{
 			g_offlineFeaturesManager.attachmentsStore.getUsage(function(usage)
 			{
 				expect(usage.attachmentCount).toBe(0);
-				done();
+//				done();
 			});
 		});
 		
-		async.it("query attachments info - online - 1", function(done)
+		it("query attachments info - online - 1", function(done)
 		{
 			g_featureLayers[3].queryAttachmentInfos(g1_online.attributes.objectid, 
 				function(attachmentsInfo)
@@ -521,16 +522,16 @@ describe("Attachments", function()
 					expect(attachmentsInfo.length).toBe(1);
 					expect(attachmentsInfo[0].objectId).toBe(g1_online.attributes.objectid);
 					expect(attachmentsInfo[0].id).toBeGreaterThan(0);
-					done();
+//					done();
 				},
 				function(err)
 				{
 					expect(true).toBeFalsy();
-					done();
+//					done();
 				});
 		});
 
-		async.it("query attachments info - online - 2", function(done)
+		it("query attachments info - online - 2", function(done)
 		{
 			g_featureLayers[3].queryAttachmentInfos(g2_offline.attributes.objectid, 
 				function(attachmentsInfo)
@@ -538,12 +539,12 @@ describe("Attachments", function()
 					expect(attachmentsInfo.length).toBe(1);
 					expect(attachmentsInfo[0].objectId).toBe(g2_offline.attributes.objectid);
 					expect(attachmentsInfo[0].id).toBeGreaterThan(0);
-					done();
+//					done();
 				},
 				function(err)
 				{
 					expect(true).toBeFalsy();
-					done();
+//					done();
 				});
 		});
 	});

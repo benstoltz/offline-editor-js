@@ -8,7 +8,7 @@
     <title>SanFrancisco311 - Incidents</title>
 
     <link rel="stylesheet" href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" >
-    <link rel="stylesheet" href="http://js.arcgis.com/3.8/js/esri/css/esri.css">
+    <link rel="stylesheet" href="http://js.arcgis.com/3.12/esri/css/esri.css">
     <style>
         html, body { height: 100%; width: 100%; margin: 0; overflow: hidden; font-family: Arial; }
         #map { height: 100%; padding: 0;}
@@ -43,18 +43,7 @@
         }
     </style>
 
-    <script>
-        var locationPath = location.pathname.replace(/\/[^/]+$/, "");
-        var dojoConfig = {
-            paths: {
-                edit: locationPath  + "/../lib/edit",
-                vendor: locationPath + "/../vendor"
-            }
-        }
-        window.proxyPath = "../lib/resource-proxy/proxy.php";
-    </script>
-
-    <script src="http://js.arcgis.com/3.8/"></script>
+    <script src="http://js.arcgis.com/3.12/"></script>
     <script src="../vendor/offline/offline.min.js"></script>
     <script>
         Offline.options = {
@@ -82,28 +71,34 @@
             "dojo/parser", "dojo/dom", "dojo/dom-class",
             "dojo/dom-construct",
 
-            "edit/offlineFeaturesManager",
-            "edit/editsStore",
             "dojo/on",
 
-            "dijit/layout/BorderContainer", "dijit/layout/ContentPane", "dojo/domReady!"
+            "dijit/layout/BorderContainer", "dijit/layout/ContentPane",
+
+            "../dist/offline-edit-src.js",
+
+            "dojo/domReady!"
         ], function(
             Map,FeatureLayer,AttachmentEditor,esriConfig,
-            parser,dom,domClass,domConstruct,OfflineFeaturesManager,editsStore,on
+            parser,dom,domClass,domConstruct,on
         ) 
         {
             parser.parse();
 
-            var featureLayers = [], 
-                featureLayer,
+            var featureLayer,
                 attachmentsInited = false;
 
-            // a proxy page is required to upload attachments
-            // refer to "Using the Proxy Page" for more information:  https://developers.arcgis.com/en/javascript/jshelp/ags_proxy.html
-            //esriConfig.defaults.io.proxyUrl = "../lib/proxy.php";
-            esriConfig.defaults.io.proxyUrl = window.proxyPath;
+//            window.proxyPath = null; //can be set to null when using a CORS-enabled server
+//            esriConfig.defaults.io.proxyUrl = null; //can be set to null when using a CORS-enabled server
 
-            var offlineFeaturesManager = new OfflineFeaturesManager();
+            var offlineFeaturesManager = new O.esri.Edit.OfflineFeaturesManager();
+
+            // IMPORTANT!!!
+            // A proxy page may be required to upload attachments.
+            // If you are using a CORS enabled server you may be ablew to set the proxyPath to null.
+            // Refer to "Using the Proxy Page" for more information:  https://developers.arcgis.com/en/javascript/jshelp/ags_proxy.html
+            offlineFeaturesManager.proxyPath = null;
+
             offlineFeaturesManager.initAttachments(function(success)
             {
                 attachmentsInited = success;
@@ -114,8 +109,8 @@
 
             map = new Map("map", {
                 basemap: "streets",
-                center: [-122.427, 37.769],
-                zoom: 15
+                center: [-88.1,41.7],
+                zoom: 11
             });
 
             map.on("load", mapLoaded);
@@ -128,7 +123,7 @@
 
             function mapLoaded() 
             {
-                featureLayer = new FeatureLayer("http://sampleserver3.arcgisonline.com/ArcGIS/rest/services/SanFrancisco/311Incidents/FeatureServer/0",{
+                featureLayer = new FeatureLayer("http://sampleserver6.arcgisonline.com/arcgis/rest/services/ServiceRequest/FeatureServer/0",{
                     mode: FeatureLayer.MODE_ONDEMAND
                     //mode: FeatureLayer.MODE_SNAPSHOT
                 });
@@ -138,7 +133,7 @@
                 var attachmentEditor = new AttachmentEditor({}, dom.byId("content"));
                 attachmentEditor.startup();
 
-                featureLayer.on("click", function(evt) 
+                featureLayer.on("click", function(evt)
                 {
                     var event = evt;
                     var objectId = evt.graphic.attributes[featureLayer.objectIdField];
@@ -175,7 +170,9 @@
                     {
                         var layer = evt.layer;
 
-                        offlineFeaturesManager.extend(featureLayer);
+                        offlineFeaturesManager.extend(featureLayer,function(success, error){
+                            if(success == false) alert("There was a problem initiating the database. " + error);
+                        });
                     }
                     catch(err)
                     {
