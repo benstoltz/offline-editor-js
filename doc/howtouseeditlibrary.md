@@ -111,13 +111,19 @@ You can then retrieve this data after an offline restart by using the following 
 
 ```js
 
-	featureLayer.getFeatureLayerJSONDataStore(function(success, dataStore){
+	offlineFeaturesManager.getFeatureLayerJSONDataStore(function(success, dataStore){
 		if(success){
 			myFeatureLayer = new 
 				FeatureLayer(JSON.parse(dataStore.featureLayerCollection),{
             	mode: FeatureLayer.MODE_SNAPSHOT,
                	outFields: ["GlobalID","BSID","ROUTES","STOPNAME"]
            	});
+           	
+           	offlineFeaturesManager.extend(myFeatureLayer,function(result, error) {
+           		if(result) {
+           			console.log("Layer has been successfully rebuilt while offline!");
+           		}
+           	}
 		}
 	});
 
@@ -154,7 +160,7 @@ Force the library to return to an online condition. If there are pending edits, 
 ```js
 		function goOnline()
 		{			
-			offlineFeaturesManager.goOnline(function(success,errors)
+			offlineFeaturesManager.goOnline(function(success,results)
 			{
 				if(success){
 				    //Modify user inteface depending on success/failure
@@ -162,6 +168,25 @@ Force the library to return to an online condition. If there are pending edits, 
 			});
 		}
 ```
+
+It's important to note that the `results` object contains all the necessary information about successes and failures that may have occurred during the online resync process. Here is a description of what's inside. The `features.responses` object contains information on features sync. The `attachments.uploadResponses` contain information on attachments sync. And, the `attachments.dbResponses` contains information on whether or not any attachment that was successfully sync'd was deleted from the local database. 
+
+```js
+
+resultsObject = {
+    features:{
+        success : boolean,
+        responses : responses
+    },
+    attachments:{
+        success : boolean,
+        uploadResponses : uploadResponses,
+        dbResponses : dbResponses 
+    }
+}
+
+```
+
 
 ####offlineFeaturesManager.getOnlineStatus()
 Within your application you can manually check online status and then update your user interface. By using a switch/case statement you can check against three enums that indicate if the library thinks it is offline, online or in the process of reconnecting.
