@@ -1,5 +1,27 @@
 # offline-editor-js - Changelog
 
+## Version 2.8.1 - May 11, 2015
+
+No breaking changes.
+
+**Enhancements**
+* Closes #339 - offline update of a new attachment needs to be handled as an ADD.
+* Updated offlineAttachmentsSpec.js to test for #339 condition.
+
+## Version 2.8 - May 4, 2015
+
+This release focused on updating full offline editing capabilities. Recommended update. No breaking changes. 
+
+**Enhancements**
+* Added functionality to `offlineFeaturesManager.js` to detect and handle when a feature layer is created using a feature collection.
+* Addresses browser changes in Chrome 42.x and Firefox 37.x with respect to how they handle HTML/JS apps when going offline and 
+then transitioning back online.
+* Updated `appcache-features.html` sample. 
+
+**Bug Fix**
+* Closes #336 - problem with appcache-features sample. The application now correctly syncs when going back online after 
+a full offline restart. It also contains improvements in how the app life-cycle is handled. 
+
 ## Version 2.7.1 - April 29, 2015
 
 This release has enhancements and has no breaking changes.
