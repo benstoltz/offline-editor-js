@@ -1,4 +1,4 @@
-/*! offline-editor-js - v2.8.1 - 2015-05-11
+/*! offline-editor-js - v2.9.3 - 2015-07-01
 *   Copyright (c) 2015 Environmental Systems Research Institute, Inc.
 *   Apache License*/
 /*jshint -W030 */
@@ -34,6 +34,9 @@ define([
                 RECONNECTING: "reconnecting",   // sending stored edits to the server
                 attachmentsStore: null,         // indexedDB for storing attachments
                 proxyPath: null,                // by default we use CORS and therefore proxyPath is null
+
+                ENABLE_FEATURECOLLECTION: false,    // Set this to true for full offline use if you want to use the
+                                                    // getFeatureCollections() pattern of reconstituting a feature layer.
 
                 // Database properties
                 DB_NAME: "features_store",      // Sets the database name.
@@ -502,6 +505,8 @@ define([
                                 }
                             }
 
+                            layer._pushFeatureCollections();
+
                             // we already pushed the edits into the database, now we let the FeatureLayer to do the local updating of the layer graphics
                             // EDITS_ENQUEUED = callback(true, edit), and EDITS_ENQUEUED_ERROR = callback(false, /*String */ error)
                             this._editHandler(results, adds, updatesMap, callback, errback, deferred1);
@@ -750,6 +755,79 @@ define([
                     /* internal methods */
 
                     /**
+                     * Automatically creates a set of featureLayerCollections. This is specifically for
+                     * use with offline browser restarts. You can retrieve the collections and use them
+                     * to reconstitute a featureLayer and then redisplay all the associated features.
+                     *
+                     * To retrieve use OfflineFeaturesManager.getFeatureCollections().
+                     *
+                     * @private
+                     */
+                    layer._pushFeatureCollections = function(){
+
+                        // First let's see if any collections exists
+                        self._editStore._getFeatureCollections(function(success, result) {
+
+                            var featureCollection =
+                            {
+                                featureLayerUrl: layer.url,
+                                featureLayerCollection: layer.toJson()
+                            };
+
+                            // An array of feature collections, of course :-)
+                            var featureCollectionsArray = [
+                                featureCollection
+                            ];
+
+                            // An object for storing multiple feature collections
+                            var featureCollectionsObject = {
+                                // The id is required because the editsStore keypath
+                                // uses it as a UID for all entries in the database
+                                id: self._editStore.FEATURE_COLLECTION_ID,
+                                featureCollections: featureCollectionsArray
+                            };
+
+                            // THIS IS A HACK.
+                            // There is a bug in JS API 3.11+ when you create a feature layer from a featureCollectionObject
+                            // the hasAttachments property does not get properly repopulated.
+                            layer.hasAttachments = featureCollection.featureLayerCollection.layerDefinition.hasAttachments;
+
+                            // If the featureCollectionsObject already exists
+                            if(success){
+                                var count = 0;
+                                for(var i = 0; i < result.featureCollections.length; i++) {
+
+                                    // Update the current feature collection
+                                    if(result.featureCollections[i].featureLayerUrl === layer.url) {
+                                        count++;
+                                        result.featureCollections[i] = featureCollection;
+                                    }
+                                }
+
+                                // If we have a new feature layer then add it to the featureCollections array
+                                if(count === 0) {
+                                    result.featureCollections.push(featureCollection);
+                                }
+                            }
+                            // If it does not exist then we need to add a featureCollectionsObject
+                            else if(!success && result === null) {
+                                result = featureCollectionsObject;
+                            }
+                            else {
+                                console.error("There was a problem retrieving the featureCollections from editStore.");
+                            }
+
+                            // Automatically update the featureCollectionsObject in the database with every ADD, UPDATE
+                            // and DELETE. It can be retrieved via OfflineFeaturesManager.getFeatureCollections();
+                            self._editStore._pushFeatureCollections(result, function(success, error) {
+                                if(!success){
+                                    console.error("There was a problem creating the featureCollectionObject: " + error);
+                                }
+                            });
+                        });
+                    };
+
+                    /**
                      * Pushes a DELETE request to the database after it's been validated
                      * @param layer
                      * @param deleteEdit
@@ -913,7 +991,7 @@ define([
 
                         var deferred = new Deferred();
 
-                        var id = layerUrl + "/" + graphic.attributes.objectid;
+                        var id = layerUrl + "/" + graphic.attributes[self.DB_UID];
 
                         self._editStore.getEdit(id,function(success,result){
                             if (success) {
@@ -1064,7 +1142,13 @@ define([
 
                     // We are currently only passing in a single deferred.
                     all(extendPromises).then(function (r) {
-                        if(r.length === 0){
+
+                        // DB already initialized
+                        if(r.length === 0 && url){
+                            // Initialize the internal featureLayerCollectionObject
+                            if(this.ENABLE_FEATURECOLLECTION) {
+                                layer._pushFeatureCollections();
+                            }
                             callback(true, null);
                         }
                         else if(r[0].success && !url){
@@ -1076,15 +1160,27 @@ define([
                                 if(success) {
                                     this._featureLayers[message.__featureLayerURL] = layer;
                                     layer.url = message.__featureLayerURL;
+
+                                    // Initialize the internal featureLayerCollectionObject
+                                    if(this.ENABLE_FEATURECOLLECTION) {
+                                        layer._pushFeatureCollections();
+                                    }
                                     callback(true, null);
                                 }
                                 else {
-                                    console.error("getFeatureLayerJSON() failed.");
+                                    // NOTE: We have to have a valid feature layer URL in order to initialize the featureLayerCollectionObject
+                                    console.error("getFeatureLayerJSON() failed and unable to create featureLayerCollectionObject.");
                                     callback(false, message);
                                 }
                             }.bind(this));
                         }
                         else if(r[0].success){
+
+                            // Initialize the internal featureLayerCollectionObject
+                            if(this.ENABLE_FEATURECOLLECTION) {
+                                layer._pushFeatureCollections();
+                            }
+
                             callback(true, null);
                         }
                     }.bind(this));
@@ -1149,6 +1245,36 @@ define([
                             callback(featureJSON);
                             break;
                         }
+                    }
+                },
+
+                /**
+                 * Retrieves the feature collection object. Specifically used in offline browser restarts.
+                 * This is an object created automatically by the library and is updated with every ADD, UPDATE and DELETE.
+                 * Attachments are handled separately and not part of the feature collection created here.
+                 *
+                 * It has the following signature: {id: "feature-collection-object-1001",
+                 * featureLayerCollections: [{ featureCollection: [Object], featureLayerUrl: String }]}
+                 *
+                 * @param callback
+                 */
+                getFeatureCollections: function(callback){
+                    if(!this._editStore._isDBInit){
+
+                        this._initializeDB(null,null).then(function(result){
+                            if(result.success){
+                                this._editStore._getFeatureCollections(function(success,message){
+                                    callback(success,message);
+                                });
+                            }
+                        }.bind(this), function(err){
+                            callback(false, err);
+                        });
+                    }
+                    else {
+                        this._editStore._getFeatureCollections(function(success,message){
+                            callback(success,message);
+                        });
                     }
                 },
 
@@ -1944,27 +2070,7 @@ define([
                     req.send(data);
 
                     //return dfd.promise;
-                },
-
-                /**
-                 * Deprecated @ v2.5. Internal-use only
-                 * @returns {string}
-                 * @private
-                 */
-                _optimizeEditsQueue: function(){
-                    return "DEPRECATED at v2.5!";
-                },
-
-                /**
-                 * DEPRECATED @ v2.5. Use getAllEditsArray() and parse the results
-                 * A string value representing human readable information on pending edits
-                 * @param edit
-                 * @returns {string}
-                 */
-                getReadableEdit: function (edit) {
-                    return "DEPRECATED at v2.5!";
                 }
-
             }); // declare
     }); // define
 
@@ -1996,7 +2102,7 @@ O.esri.Edit.EditStore = function () {
     this.objectStoreName = "features";
     this.objectId = "objectid"; // set this depending on how your feature service is configured;
 
-    var _dbIndex = "featureId"; // @private
+    //var _dbIndex = "featureId"; // @private
 
     // ENUMs
 
@@ -2005,6 +2111,7 @@ O.esri.Edit.EditStore = function () {
     this.DELETE = "delete";
 
     this.FEATURE_LAYER_JSON_ID = "feature-layer-object-1001";
+    this.FEATURE_COLLECTION_ID = "feature-collection-object-1001";
     this.PHANTOM_GRAPHIC_PREFIX = "phantom-layer";
     this._PHANTOM_PREFIX_TOKEN = "|@|";
 
@@ -2531,30 +2638,27 @@ O.esri.Edit.EditStore = function () {
         console.assert(this._db !== null, "indexeddb not initialized");
         var objectStore = this._db.transaction([this.objectStoreName], "readwrite").objectStore(this.objectStoreName);
 
-        require(["dojo/Deferred"], function (Deferred) {
+        if(typeof id === "undefined"){
+            callback(false,"id is undefined.");
+            return;
+        }
 
-            if(typeof id === "undefined"){
-                callback(false,"id is undefined.");
-                return;
+        //Get the entry associated with the graphic
+        var objectStoreGraphicRequest = objectStore.get(id);
+
+        objectStoreGraphicRequest.onsuccess = function () {
+            var graphic = objectStoreGraphicRequest.result;
+            if (graphic && (graphic.id == id)) {
+                callback(true,graphic);
             }
+            else {
+                callback(false,"Id not found");
+            }
+        };
 
-            //Get the entry associated with the graphic
-            var objectStoreGraphicRequest = objectStore.get(id);
-
-            objectStoreGraphicRequest.onsuccess = function () {
-                var graphic = objectStoreGraphicRequest.result;
-                if (graphic && (graphic.id == id)) {
-                    callback(true,graphic);
-                }
-                else {
-                    callback(false,"Id not found");
-                }
-            };
-
-            objectStoreGraphicRequest.onerror = function (msg) {
-                callback(false,msg);
-            };
-        });
+        objectStoreGraphicRequest.onerror = function (msg) {
+            callback(false,msg);
+        };
     };
 
     /**
@@ -2568,6 +2672,7 @@ O.esri.Edit.EditStore = function () {
         if (this._db !== null) {
 
             var fLayerJSONId = this.FEATURE_LAYER_JSON_ID;
+            var fCollectionId = this.FEATURE_COLLECTION_ID;
             var phantomGraphicPrefix = this.PHANTOM_GRAPHIC_PREFIX;
 
             var transaction = this._db.transaction([this.objectStoreName])
@@ -2579,7 +2684,7 @@ O.esri.Edit.EditStore = function () {
                 if (cursor && cursor.hasOwnProperty("value") && cursor.value.hasOwnProperty("id")) {
 
                     // Make sure we are not return FeatureLayer JSON data or a Phantom Graphic
-                    if (cursor.value.id !== fLayerJSONId && cursor.value.id.indexOf(phantomGraphicPrefix) == -1) {
+                    if (cursor.value.id !== fLayerJSONId && cursor.value.id !== fCollectionId && cursor.value.id.indexOf(phantomGraphicPrefix) == -1) {
                         callback(cursor.value, null);
                     }
                     cursor.continue();
@@ -2609,6 +2714,7 @@ O.esri.Edit.EditStore = function () {
         if (this._db !== null) {
 
             var fLayerJSONId = this.FEATURE_LAYER_JSON_ID;
+            var fCollectionId = this.FEATURE_COLLECTION_ID;
             var phantomGraphicPrefix = this.PHANTOM_GRAPHIC_PREFIX;
 
             var transaction = this._db.transaction([this.objectStoreName])
@@ -2620,7 +2726,7 @@ O.esri.Edit.EditStore = function () {
                 if (cursor && cursor.value && cursor.value.id) {
 
                     // Make sure we are not return FeatureLayer JSON data or a Phantom Graphic
-                    if (cursor.value.id !== fLayerJSONId && cursor.value.id.indexOf(phantomGraphicPrefix) == -1) {
+                    if (cursor.value.id !== fLayerJSONId && cursor.value.id !== fCollectionId && cursor.value.id.indexOf(phantomGraphicPrefix) == -1) {
                         editsArray.push(cursor.value);
 
                     }
@@ -2779,6 +2885,7 @@ O.esri.Edit.EditStore = function () {
 
         var count = 0;
         var id = this.FEATURE_LAYER_JSON_ID;
+        var fCollectionId = this.FEATURE_COLLECTION_ID;
         var phantomGraphicPrefix = this.PHANTOM_GRAPHIC_PREFIX;
 
         var transaction = this._db.transaction([this.objectStoreName], "readwrite");
@@ -2789,7 +2896,7 @@ O.esri.Edit.EditStore = function () {
             // IMPORTANT:
             // Remember that we have feature layer JSON and Phantom Graphics in the same database
             if (cursor && cursor.value && cursor.value.id && cursor.value.id.indexOf(phantomGraphicPrefix) == -1) {
-                if (cursor.value.id !== id) {
+                if (cursor.value.id !== id && cursor.value.id !== fCollectionId) {
                     count++;
                 }
                 cursor.continue();
@@ -2848,6 +2955,7 @@ O.esri.Edit.EditStore = function () {
         console.assert(this._db !== null, "indexeddb not initialized");
 
         var id = this.FEATURE_LAYER_JSON_ID;
+        var fCollectionId = this.FEATURE_COLLECTION_ID;
         var phantomGraphicPrefix = this.PHANTOM_GRAPHIC_PREFIX;
 
         var usage = {sizeBytes: 0, editCount: 0};
@@ -2865,7 +2973,7 @@ O.esri.Edit.EditStore = function () {
                 var json = JSON.stringify(storedObject);
                 usage.sizeBytes += json.length;
 
-                if (cursor.value.id.indexOf(phantomGraphicPrefix) == -1 && cursor.value.id !== id) {
+                if (cursor.value.id.indexOf(phantomGraphicPrefix) == -1 && cursor.value.id !== id && cursor.value.id !== fCollectionId) {
                     usage.editCount += 1;
                 }
 
@@ -2880,7 +2988,54 @@ O.esri.Edit.EditStore = function () {
         };
     };
 
+    //
     // internal methods
+    //
+
+    /**
+     * The library automatically keeps a copy of the featureLayerCollection and its
+     * associated layer.url.
+     *
+     * There should be only one featureLayerCollection Object per feature layer.
+     * @param featureCollectionObject
+     * @param callback
+     * @private
+     */
+    this._pushFeatureCollections = function(featureCollectionObject, callback){
+        var transaction = this._db.transaction([this.objectStoreName], "readwrite");
+
+        transaction.oncomplete = function (event) {
+            callback(true);
+        };
+
+        transaction.onerror = function (event) {
+            callback(false, event.target.error.message);
+        };
+
+        var objectStore = transaction.objectStore(this.objectStoreName);
+        objectStore.put(featureCollectionObject);
+    };
+
+    this._getFeatureCollections = function(callback){
+        var objectStore = this._db.transaction([this.objectStoreName], "readonly").objectStore(this.objectStoreName);
+
+        //Get the entry associated with the graphic
+        var objectStoreGraphicRequest = objectStore.get(this.FEATURE_COLLECTION_ID);
+
+        objectStoreGraphicRequest.onsuccess = function () {
+            var object = objectStoreGraphicRequest.result;
+            if (typeof object != "undefined") {
+                callback(true, object);
+            }
+            else {
+                callback(false, null);
+            }
+        };
+
+        objectStoreGraphicRequest.onerror = function (msg) {
+            callback(false, msg);
+        };
+    };
 
     /**
      * Save space in the database...don't need to store the entire Graphic object just its public properties!
@@ -2932,8 +3087,7 @@ O.esri.Edit.EditStore = function () {
                 db.deleteObjectStore(this.objectStoreName);
             }
 
-            var objectStore = db.createObjectStore(this.objectStoreName, {keyPath: "id"});
-            objectStore.createIndex(_dbIndex, _dbIndex, {unique: false});
+            db.createObjectStore(this.objectStoreName, {keyPath: "id"});
         }.bind(this);
 
         request.onsuccess = function (event) {
@@ -2942,64 +3096,6 @@ O.esri.Edit.EditStore = function () {
             console.log("database opened successfully");
             callback(true, null);
         }.bind(this);
-    };
-
-    ///
-    /// DEPRECATED @ v2.5
-    /// Subject to complete removal at the next release.
-    /// Many of these were undocumented and for internal use.
-    ///
-
-    /**
-     * Deprecated @ v2.5. Use pendingEditsCount().
-     */
-    this.hasPendingEdits = function () {
-        return "DEPRECATED at v2.5!";
-    };
-
-    /**
-     * Deprecated @ v2.5. Use public function editExists() instead.
-     */
-    this._isEditDuplicated = function (newEdit, edits) {
-        return "DEPRECATED at v2.5!";
-    };
-
-    /**
-     * Deprecated @ v2.5. Use pushEdit()
-     */
-    this._storeEditsQueue = function (edits) {
-        return "DEPRECATED at v2.5!";
-    };
-
-    /**
-     * Deprecated @ v2.5.
-     */
-    this._unpackArrayOfEdits = function (edits) {
-        return "DEPRECATED at v2.5!";
-    };
-
-    /**
-     * Deprecated @ v2.5. Use getUsage().
-     * @returns {string}
-     */
-    this.getLocalStorageSizeBytes = function(){
-        return "DEPRECATED at v2.5!";
-    };
-
-    /**
-     * Deprecated @ v2.5.
-     * @returns {string}
-     */
-    this.peekFirstEdit = function(){
-        return "DEPRECATED at v2.5!";
-    };
-
-    /**
-     * Deprecated @ v2.5.
-     * @returns {string}
-     */
-    this.popFirstEdit = function(){
-        return "DEPRECATED at v2.5!";
     };
 };
 

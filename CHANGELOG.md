@@ -1,5 +1,59 @@
 # offline-editor-js - Changelog
 
+## Version 2.9.3 - July 1, 2015
+
+No breaking changes.
+
+**Enhancements**
+* Closes #319. Make TPK support more universal between Chrome and WebView on Android.
+
+## Version 2.9.2.2 - June 24, 2015
+
+Minor doc update. Updates to README.
+
+## Version 2.9.2.1 - June 18, 2015
+
+Minor doc update. Clarifications on how to use the tile libraries and fixed some typos.
+
+## Version 2.9.2 - June 17, 2015
+
+No breaking changes.
+
+**Enhancements**
+* OfflineFeaturesManager now overrides layer.hasAttachments property. The override is available after a feature layer 
+has been extended. This fixes an existing bug in the ArcGIS JS API when you create a feature layer from a featureCollectionObject
+the hasAttachmens property does not get correctly repopulated.
+
+**Bug fix**
+* Fixes issue in offlineFeaturesManager's featureCollection data store when using it with multiple feature layers. 
+Subsequent featureLayerCollections were being stored as arrays instead of objects.
+* Minor tweak to appcache-tiles.appcache. It was broken.
+
+## Version 2.9.1 - May 28, 2015
+
+No breaking changes.
+
+**Enhancements**
+* Initializes internal featureCollectionObject when a layer is extended.
+* Added property `OfflineFeaturesManager.ENABLE_FEATURECOLLECTION`. Default value is `false`. When enabled this will
+allow the library to automatically create a snapshot of the feature layer.
+
+## Version 2.9 - May 27, 2015
+
+No breaking changes.
+
+**Enhancements**
+* Closes #327 - Improved use of keys and indexes in editsStore.js. Minor tweaks at this time.
+* Closes #342 - Automates featureCollection management. New method `OfflineFeaturesManager.getFeatureCollections()`.
+
+
+## Version 2.8.2 - May 19, 2015
+
+No breaking changes. Recommended update.
+
+**Enhancements**
+* Fixes sync error when returning online after updating a new edit offline.
+
 ## Version 2.8.1 - May 11, 2015
 
 No breaking changes.
